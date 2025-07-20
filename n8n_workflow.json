@@ -1,0 +1,185 @@
+{
+	"nodes": [
+		{
+			"parameters": {
+				"cronExpression": "0 * * * *"
+			},
+			"id": "Schedule",
+			"name": "Schedule",
+			"type": "n8n-nodes-base.cron",
+			"typeVersion": 1,
+			"position": [
+				200,
+				200
+			]
+		},
+		{
+			"parameters": {},
+			"id": "Manual Trigger",
+			"name": "Manual Trigger",
+			"type": "n8n-nodes-base.manualTrigger",
+			"typeVersion": 1,
+			"position": [
+				200,
+				400
+			]
+		},
+		{
+			"parameters": {
+				"command": "node /data/scrape-twitter.js",
+				"options": {
+					"env": {
+						"TWITTER_COOKIE": "YOUR_TWITTER_COOKIE_HERE",
+						"SEARCH_URL": "https://x.com/search?q=Podha%20AND%20(RWA%20OR%20%22Real%20World%20Assets%22%20OR%20Yield)&f=live"
+					}
+				}
+			},
+			"id": "Scrape Twitter",
+			"name": "Scrape Twitter",
+			"type": "n8n-nodes-base.executeCommand",
+			"typeVersion": 1,
+			"position": [
+				400,
+				300
+			]
+		},
+		{
+			"parameters": {
+				"functionCode": "// Parse Puppeteer JSON output\nconst tweets = JSON.parse(items[0].json.stdout || items[0].json.output);\nreturn tweets.map(t => ({ json: t }));"
+			},
+			"id": "Parse Tweets",
+			"name": "Parse Tweets",
+			"type": "n8n-nodes-base.function",
+			"typeVersion": 1,
+			"position": [
+				600,
+				300
+			]
+		},
+		{
+			"parameters": {
+				"conditions": {
+					"boolean": [
+						{
+							"value1": "={{$json[\"verified\"]}}",
+							"value2": true
+						}
+					],
+					"number": [
+						{
+							"value1": "={{$json[\"likes\"]}}",
+							"operation": "largerEqual",
+							"value2": 3
+						}
+					]
+				}
+			},
+			"id": "Filter Verified & Likes",
+			"name": "Filter Verified & Likes",
+			"type": "n8n-nodes-base.if",
+			"typeVersion": 1,
+			"position": [
+				800,
+				300
+			]
+		},
+		{
+			"parameters": {
+				"functionCode": "// De-duplicate using staticData\nconst staticData = this.getWorkflowStaticData('global');\nif (!staticData.seenTweets) staticData.seenTweets = [];\nconst seen = staticData.seenTweets;\nconst newTweets = [];\n\nfor (const item of items) {\n  if (!seen.includes(item.json.link)) {\n    newTweets.push(item);\n    seen.push(item.json.link);\n  }\n}\n\nstaticData.seenTweets = seen;\nreturn newTweets;"
+			},
+			"id": "De-duplicate",
+			"name": "De-duplicate",
+			"type": "n8n-nodes-base.function",
+			"typeVersion": 1,
+			"position": [
+				1000,
+				300
+			]
+		},
+		{
+			"parameters": {
+				"url": "YOUR_DISCORD_WEBHOOK_URL_HERE",
+				"method": "POST",
+				"jsonParameters": true,
+				"options": {},
+				"bodyParametersJson": "{\n  \"content\": \"📢 **New Tweet Found:**\\n{{$json[\"text\"]}}\\n🔗 {{$json[\"link\"]}}\"\n}"
+			},
+			"id": "Send to Discord",
+			"name": "Send to Discord",
+			"type": "n8n-nodes-base.httpRequest",
+			"typeVersion": 1,
+			"position": [
+				1200,
+				300
+			]
+		}
+	],
+	"connections": {
+		"Schedule": {
+			"main": [
+				[
+					{
+						"node": "Scrape Twitter",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Manual Trigger": {
+			"main": [
+				[
+					{
+						"node": "Scrape Twitter",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Scrape Twitter": {
+			"main": [
+				[
+					{
+						"node": "Parse Tweets",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Parse Tweets": {
+			"main": [
+				[
+					{
+						"node": "Filter Verified & Likes",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"Filter Verified & Likes": {
+			"main": [
+				[
+					{
+						"node": "De-duplicate",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		},
+		"De-duplicate": {
+			"main": [
+				[
+					{
+						"node": "Send to Discord",
+						"type": "main",
+						"index": 0
+					}
+				]
+			]
+		}
+	}
+}
